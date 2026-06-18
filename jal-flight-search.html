@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JAL 国内線 時刻表検索</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#0d1117;color:#e6edf3;height:100vh;display:flex;flex-direction:column}
+
+/* ── header ── */
+header{background:#c41e3a;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0;z-index:400}
+.logo{font-size:1.4rem;font-weight:900;letter-spacing:.05em;color:#fff}
+.logo span{color:#ffcc00}
+h1{font-size:.95rem;font-weight:700;color:#fff;white-space:nowrap}
+.hdr-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.tab-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:5px 14px;border-radius:6px;font-size:.8rem;cursor:pointer;font-weight:600;transition:.15s}
+.tab-btn.active,.tab-btn:hover{background:rgba(255,255,255,.35)}
+
+/* ── layout ── */
+.main{display:flex;flex:1;overflow:hidden}
+.sidebar{width:380px;flex-shrink:0;background:#161b22;border-right:1px solid #30363d;display:flex;flex-direction:column;overflow:hidden}
+.map-area{flex:1;position:relative}
+#map{width:100%;height:100%}
+
+/* ── panels ── */
+.panel{display:none;flex-direction:column;flex:1;overflow:hidden}
+.panel.active{display:flex}
+
+/* ── search form ── */
+.form-section{padding:14px;border-bottom:1px solid #30363d;flex-shrink:0}
+.form-section h2{font-size:.8rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
+.row{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+.row label{font-size:.75rem;color:#8b949e;white-space:nowrap;width:44px;flex-shrink:0}
+select,input[type=date],input[type=text]{background:#0d1117;border:1px solid #30363d;color:#e6edf3;border-radius:6px;padding:6px 10px;font-size:.82rem;flex:1;min-width:0}
+select:focus,input:focus{outline:none;border-color:#c41e3a}
+.btn-primary{background:#c41e3a;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:.85rem;font-weight:700;cursor:pointer;width:100%;margin-top:4px;transition:.15s}
+.btn-primary:hover{background:#a01830}
+.btn-secondary{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 14px;font-size:.8rem;cursor:pointer;transition:.15s}
+.btn-secondary:hover{background:#30363d}
+.btn-add{background:transparent;border:1px dashed #30363d;color:#8b949e;border-radius:6px;padding:6px 12px;font-size:.78rem;cursor:pointer;width:100%;margin-top:4px}
+.btn-add:hover{border-color:#c41e3a;color:#c41e3a}
+
+/* ── results ── */
+.results-area{flex:1;overflow-y:auto;padding:10px}
+.result-card{background:#21262d;border:1px solid #30363d;border-radius:8px;padding:12px;margin-bottom:8px;cursor:pointer;transition:.15s}
+.result-card:hover{border-color:#c41e3a}
+.result-card.selected{border-color:#c41e3a;background:#2d1a1f}
+.flight-num{font-size:.85rem;font-weight:700;color:#c41e3a}
+.flight-times{display:flex;align-items:center;gap:8px;margin:6px 0}
+.time-big{font-size:1.2rem;font-weight:700}
+.arrow{color:#8b949e;font-size:.9rem}
+.airports{font-size:.75rem;color:#8b949e}
+.flight-meta{font-size:.72rem;color:#8b949e;margin-top:4px;display:flex;gap:12px;flex-wrap:wrap}
+.badge{background:#30363d;border-radius:4px;padding:2px 6px;font-size:.7rem}
+.badge.jal{background:#c41e3a22;color:#c41e3a;border:1px solid #c41e3a44}
+.no-results{color:#8b949e;text-align:center;padding:24px;font-size:.85rem}
+
+/* ── itinerary ── */
+.itinerary-section{padding:14px;border-top:1px solid #30363d;flex-shrink:0;max-height:220px;overflow-y:auto}
+.itinerary-section h2{font-size:.8rem;font-weight:700;color:#8b949e;text-transform:uppercase;margin-bottom:8px}
+.itin-leg{background:#21262d;border-radius:6px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;gap:8px}
+.itin-leg .fn{font-size:.78rem;font-weight:700;color:#c41e3a;width:60px}
+.itin-leg .detail{flex:1;font-size:.78rem}
+.itin-leg .del{background:none;border:none;color:#8b949e;cursor:pointer;font-size:.9rem;padding:0 4px}
+.itin-leg .del:hover{color:#c41e3a}
+.total-time{font-size:.75rem;color:#8b949e;margin-top:6px;padding-top:6px;border-top:1px solid #30363d}
+
+/* ── airport info panel (map click) ── */
+.airport-info{padding:14px;border-bottom:1px solid #30363d;flex-shrink:0}
+.airport-info h2{font-size:.9rem;font-weight:700;margin-bottom:4px}
+.airport-info .iata{background:#c41e3a;color:#fff;border-radius:4px;padding:1px 7px;font-size:.8rem;font-weight:700;display:inline-block;margin-right:6px}
+.route-list{flex:1;overflow-y:auto;padding:10px}
+.route-item{background:#21262d;border:1px solid #30363d;border-radius:6px;padding:8px 12px;margin-bottom:6px;cursor:pointer;display:flex;align-items:center;gap:8px;transition:.15s}
+.route-item:hover{border-color:#c41e3a}
+.route-item .dest{font-weight:700;font-size:.9rem}
+.route-item .freq{font-size:.72rem;color:#8b949e;margin-left:auto}
+
+/* ── loading ── */
+.loading{display:none;position:absolute;inset:0;background:rgba(13,17,23,.8);z-index:500;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+.loading.show{display:flex}
+.spinner{width:36px;height:36px;border:3px solid #30363d;border-top-color:#c41e3a;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:.85rem;color:#8b949e}
+
+/* ── map markers ── */
+.airport-marker{width:28px;height:28px;background:#c41e3a;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.55rem;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.5)}
+.airport-marker.hub{width:34px;height:34px;background:#1a3c8f;font-size:.6rem}
+.route-line{stroke:#c41e3a;stroke-width:2;stroke-dasharray:4 4;opacity:.7}
+
+/* ── status / error ── */
+.status-bar{background:#21262d;border-top:1px solid #30363d;padding:6px 14px;font-size:.72rem;color:#8b949e;flex-shrink:0}
+.err{color:#f85149}
+
+/* ── leg selector (multi-leg) ── */
+.leg-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.leg-label{font-size:.75rem;font-weight:700;color:#c41e3a}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:#0d1117}
+::-webkit-scrollbar-thumb{background:#30363d;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#c41e3a}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">J<span>A</span>L</div>
+  <h1>国内線 時刻表・経路検索</h1>
+  <div class="hdr-right">
+    <button class="tab-btn active" id="btnMapMode" onclick="setMode('map')">地図から検索</button>
+    <button class="tab-btn" id="btnSearchMode" onclick="setMode('search')">経路検索</button>
+  </div>
+</header>
+
+<div class="main">
+  <!-- ========= SIDEBAR ========= -->
+  <div class="sidebar">
+
+    <!-- === MAP MODE panel === -->
+    <div class="panel active" id="panelMap">
+      <div class="airport-info" id="airportInfo" style="display:none">
+        <div id="airportTitle">空港を選択してください</div>
+        <div style="font-size:.75rem;color:#8b949e;margin-top:4px" id="airportSub"></div>
+      </div>
+      <div id="mapHint" style="padding:20px;color:#8b949e;font-size:.82rem;text-align:center;line-height:1.7">
+        地図上の空港マーカーをクリックすると<br>就航路線が表示されます
+      </div>
+      <div class="route-list" id="routeList" style="display:none"></div>
+
+      <!-- Date for map mode -->
+      <div class="form-section" style="border-top:1px solid #30363d;border-bottom:none">
+        <div class="row">
+          <label>日付</label>
+          <input type="date" id="mapDate" />
+        </div>
+      </div>
+
+      <!-- Itinerary -->
+      <div class="itinerary-section" id="itinSection">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <h2>行程メモ</h2>
+          <button class="btn-secondary" onclick="clearItinerary()" style="font-size:.72rem;padding:3px 8px">クリア</button>
+        </div>
+        <div id="itinList"><div class="no-results" style="padding:12px">フライトをクリックして追加</div></div>
+        <div class="total-time" id="totalTime" style="display:none"></div>
+      </div>
+    </div>
+
+    <!-- === SEARCH MODE panel === -->
+    <div class="panel" id="panelSearch">
+      <div class="form-section">
+        <h2>フライト検索</h2>
+        <div id="legForms">
+          <!-- legs injected here -->
+        </div>
+        <button class="btn-add" onclick="addLeg()">+ 乗り継ぎ区間を追加</button>
+        <div class="row" style="margin-top:8px">
+          <label>日付</label>
+          <input type="date" id="searchDate" />
+        </div>
+        <button class="btn-primary" onclick="runSearch()">検索</button>
+      </div>
+
+      <div class="results-area" id="searchResults">
+        <div class="no-results">出発地・目的地を入力して検索してください</div>
+      </div>
+
+      <!-- Itinerary shared -->
+      <div class="itinerary-section" id="itinSection2">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <h2>行程メモ</h2>
+          <button class="btn-secondary" onclick="clearItinerary()" style="font-size:.72rem;padding:3px 8px">クリア</button>
+        </div>
+        <div id="itinList2"><div class="no-results" style="padding:12px">フライトをクリックして追加</div></div>
+        <div class="total-time" id="totalTime2" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========= MAP ========= -->
+  <div class="map-area">
+    <div id="map"></div>
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <div class="loading-text" id="loadingText">データを取得中...</div>
+    </div>
+  </div>
+</div>
+
+<div class="status-bar" id="statusBar">ODPT APIに接続中...</div>
+
+<script>
+// ============================================================
+//  ODPT API
+// ============================================================
+const ODPT_BASE = 'https://api.odpt.org/api/4';
+// Public token (no-auth endpoint for flight data)
+// ODPT Flight data is available via the public endpoint
+const ODPT_TOKEN = '';  // Set via URL param ?token=XXX or leave blank for public
+
+function odptToken(){
+  const p = new URLSearchParams(location.search);
+  return p.get('token') || ODPT_TOKEN;
+}
+
+async function odptFetch(path, params={}){
+  const tok = odptToken();
+  const q = new URLSearchParams(params);
+  if(tok) q.set('acl:consumerKey', tok);
+  const url = `${ODPT_BASE}${path}?${q}`;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+// ============================================================
+//  JAL Domestic Airport Data (static fallback + ODPT merge)
+// ============================================================
+// Coordinates and IATA codes for major JAL domestic airports
+const AIRPORTS = {
+  'CTS': {name:'新千歳空港', nameEn:'Sapporo/New Chitose', lat:42.7752, lng:141.6921, hub:false},
+  'HKD': {name:'函館空港', nameEn:'Hakodate', lat:41.7700, lng:140.8219, hub:false},
+  'AKJ': {name:'旭川空港', nameEn:'Asahikawa', lat:43.6708, lng:142.4474, hub:false},
+  'MMB': {name:'女満別空港', nameEn:'Memanbetsu', lat:43.8806, lng:144.1639, hub:false},
+  'KUH': {name:'釧路空港', nameEn:'Kushiro', lat:43.0412, lng:144.1928, hub:false},
+  'OBO': {name:'帯広空港', nameEn:'Obihiro', lat:42.7333, lng:143.2175, hub:false},
+  'AOJ': {name:'青森空港', nameEn:'Aomori', lat:40.7347, lng:140.6908, hub:false},
+  'AXT': {name:'秋田空港', nameEn:'Akita', lat:39.6156, lng:140.2186, hub:false},
+  'SYO': {name:'庄内空港', nameEn:'Shonai', lat:38.8122, lng:139.7872, hub:false},
+  'GAJ': {name:'山形空港', nameEn:'Yamagata', lat:38.4119, lng:140.3714, hub:false},
+  'SDJ': {name:'仙台空港', nameEn:'Sendai', lat:38.1397, lng:140.9169, hub:false},
+  'HNA': {name:'花巻空港', nameEn:'Hanamaki', lat:39.4286, lng:141.1350, hub:false},
+  'FKS': {name:'福島空港', nameEn:'Fukushima', lat:37.2275, lng:140.4308, hub:false},
+  'HND': {name:'羽田空港', nameEn:'Tokyo/Haneda', lat:35.5494, lng:139.7798, hub:true},
+  'NRT': {name:'成田国際空港', nameEn:'Narita', lat:35.7647, lng:140.3864, hub:false},
+  'KMQ': {name:'小松空港', nameEn:'Komatsu', lat:36.3944, lng:136.4072, hub:false},
+  'TOY': {name:'富山空港', nameEn:'Toyama', lat:36.6483, lng:137.1875, hub:false},
+  'OKJ': {name:'岡山桃太郎空港', nameEn:'Okayama', lat:34.7569, lng:133.8550, hub:false},
+  'HIJ': {name:'広島空港', nameEn:'Hiroshima', lat:34.4361, lng:132.9194, hub:false},
+  'UBJ': {name:'山口宇部空港', nameEn:'Yamaguchi-Ube', lat:33.9300, lng:131.2792, hub:false},
+  'IWJ': {name:'岩国錦帯橋空港', nameEn:'Iwakuni', lat:34.1464, lng:132.2361, hub:false},
+  'ITM': {name:'大阪/伊丹空港', nameEn:'Osaka/Itami', lat:34.7855, lng:135.4383, hub:false},
+  'KIX': {name:'関西国際空港', nameEn:'Kansai', lat:34.4347, lng:135.2441, hub:false},
+  'NGO': {name:'中部国際空港', nameEn:'Nagoya/Centrair', lat:34.8583, lng:136.8050, hub:false},
+  'FUK': {name:'福岡空港', nameEn:'Fukuoka', lat:33.5858, lng:130.4508, hub:false},
+  'KMJ': {name:'熊本空港', nameEn:'Kumamoto', lat:32.8372, lng:130.8553, hub:false},
+  'OIT': {name:'大分空港', nameEn:'Oita', lat:33.4797, lng:131.7372, hub:false},
+  'KMI': {name:'宮崎空港', nameEn:'Miyazaki', lat:31.8772, lng:131.4492, hub:false},
+  'KOJ': {name:'鹿児島空港', nameEn:'Kagoshima', lat:31.8034, lng:130.7189, hub:false},
+  'OKA': {name:'那覇空港', nameEn:'Naha', lat:26.1958, lng:127.6458, hub:true},
+  'ISG': {name:'石垣空港', nameEn:'Ishigaki', lat:24.3967, lng:124.1867, hub:false},
+  'MMY': {name:'宮古空港', nameEn:'Miyako', lat:24.7828, lng:125.2947, hub:false},
+  'OKE': {name:'沖永良部空港', nameEn:'Okinoerabu', lat:27.4258, lng:128.7014, hub:false},
+  'AMS': {name:'奄美空港', nameEn:'Amami', lat:28.4308, lng:129.7125, hub:false},
+  'KKX': {name:'喜界空港', nameEn:'Kikai', lat:28.3213, lng:129.9277, hub:false},
+  'TKN': {name:'徳之島空港', nameEn:'Tokunoshima', lat:27.8364, lng:128.8808, hub:false},
+  'DNS': {name:'与論空港', nameEn:'Yoron', lat:27.0439, lng:128.4017, hub:false},
+  'OKT': {name:'沖縄/久米島空港', nameEn:'Kumejima', lat:26.3636, lng:126.7136, hub:false},
+  'MYJ': {name:'松山空港', nameEn:'Matsuyama', lat:33.8272, lng:132.7000, hub:false},
+  'TAK': {name:'高松空港', nameEn:'Takamatsu', lat:34.2144, lng:134.0164, hub:false},
+  'TKS': {name:'徳島空港', nameEn:'Tokushima', lat:34.1308, lng:134.6067, hub:false},
+  'KCZ': {name:'高知龍馬空港', nameEn:'Kochi', lat:33.5461, lng:133.6697, hub:false},
+  'NGS': {name:'長崎空港', nameEn:'Nagasaki', lat:32.9169, lng:129.9136, hub:false},
+  'HSG': {name:'佐賀空港', nameEn:'Saga', lat:33.1497, lng:130.3017, hub:false},
+  'HAC': {name:'八丈島空港', nameEn:'Hachijojima', lat:33.1150, lng:139.7861, hub:false},
+  'OIM': {name:'大島空港', nameEn:'Oshima', lat:34.7822, lng:139.3606, hub:false},
+};
+
+// Known JAL domestic routes (airport pairs)
+// Loaded from ODPT; this is a fallback/seed list
+const KNOWN_ROUTES = [
+  ['HND','CTS'],['HND','HKD'],['HND','AKJ'],['HND','MMB'],['HND','KUH'],['HND','OBO'],
+  ['HND','AOJ'],['HND','AXT'],['HND','SDJ'],['HND','HNA'],['HND','SYO'],['HND','GAJ'],
+  ['HND','ITM'],['HND','KIX'],['HND','NGO'],['HND','FUK'],['HND','KMJ'],['HND','OIT'],
+  ['HND','KMI'],['HND','KOJ'],['HND','OKA'],['HND','ISG'],['HND','MMY'],
+  ['HND','HIJ'],['HND','OKJ'],['HND','UBJ'],['HND','MYJ'],['HND','TAK'],['HND','TKS'],
+  ['HND','KCZ'],['HND','NGS'],['HND','AMS'],
+  ['HND','KMQ'],['HND','TOY'],
+  ['HND','HAC'],['HND','OIM'],
+  ['ITM','CTS'],['ITM','AXT'],['ITM','SDJ'],['ITM','FUK'],['ITM','KOJ'],['ITM','OKA'],
+  ['OKA','ISG'],['OKA','MMY'],['OKA','OKE'],['OKA','AMS'],['OKA','TKN'],['OKA','KKX'],
+  ['OKA','DNS'],['OKA','OKT'],
+  ['FUK','CTS'],['FUK','OKA'],
+  ['NGO','CTS'],['NGO','AXT'],['NGO','FUK'],['NGO','OKA'],
+];
+
+// Build adjacency
+const routeMap = {};
+KNOWN_ROUTES.forEach(([a,b])=>{
+  if(!routeMap[a]) routeMap[a]=new Set();
+  if(!routeMap[b]) routeMap[b]=new Set();
+  routeMap[a].add(b);
+  routeMap[b].add(a);
+});
+
+// ============================================================
+//  App State
+// ============================================================
+let map, markers={}, routeLines=[], selectedAirport=null;
+let itinerary=[]; // [{flightNumber, depAirport, arrAirport, depTime, arrTime, date}]
+let searchLegs=[{from:'HND',to:'OKA'}];
+let mode='map';
+let flightDataCache={};
+
+// ============================================================
+//  Init
+// ============================================================
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // Set default date = today
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('mapDate').value = today;
+  document.getElementById('searchDate').value = today;
+
+  initMap();
+  initSearchLegs();
+  setStatus('地図を初期化しました。空港マーカーをクリックして路線を確認できます。');
+  tryLoadOdptAirports();
+});
+
+// ============================================================
+//  Map
+// ============================================================
+function initMap(){
+  map = L.map('map', {center:[36.5,137],zoom:5,zoomControl:true});
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+    attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:18
+  }).addTo(map);
+
+  Object.entries(AIRPORTS).forEach(([iata, ap])=>{
+    addAirportMarker(iata, ap);
+  });
+}
+
+function addAirportMarker(iata, ap){
+  const el = document.createElement('div');
+  el.className = 'airport-marker' + (ap.hub?' hub':'');
+  el.textContent = iata;
+  const icon = L.divIcon({html:el, className:'', iconSize:[ap.hub?34:28, ap.hub?34:28], iconAnchor:[ap.hub?17:14, ap.hub?17:14]});
+  const m = L.marker([ap.lat, ap.lng], {icon}).addTo(map);
+  m.on('click', ()=> onAirportClick(iata));
+  m.bindTooltip(`<b>${iata}</b><br>${ap.name}`, {direction:'top', className:'', opacity:.92});
+  markers[iata] = m;
+}
+
+function clearRouteLines(){
+  routeLines.forEach(l=>map.removeLayer(l));
+  routeLines=[];
+}
+
+function drawRoutes(iata){
+  clearRouteLines();
+  const dests = routeMap[iata];
+  if(!dests) return;
+  const src = AIRPORTS[iata];
+  if(!src) return;
+  dests.forEach(dest=>{
+    const dst = AIRPORTS[dest];
+    if(!dst) return;
+    const line = L.polyline([[src.lat,src.lng],[dst.lat,dst.lng]],
+      {color:'#c41e3a', weight:2, dashArray:'6 4', opacity:.75}).addTo(map);
+    routeLines.push(line);
+  });
+}
+
+// ============================================================
+//  Airport click
+// ============================================================
+async function onAirportClick(iata){
+  selectedAirport = iata;
+  const ap = AIRPORTS[iata];
+  if(!ap) return;
+
+  document.getElementById('mapHint').style.display='none';
+  document.getElementById('routeList').style.display='block';
+
+  const infoEl = document.getElementById('airportInfo');
+  infoEl.style.display='block';
+  document.getElementById('airportTitle').innerHTML =
+    `<span class="iata">${iata}</span><b>${ap.name}</b>`;
+  document.getElementById('airportSub').textContent = ap.nameEn;
+
+  drawRoutes(iata);
+
+  const dests = Array.from(routeMap[iata]||[]).sort();
+  const rl = document.getElementById('routeList');
+  if(dests.length===0){
+    rl.innerHTML='<div class="no-results">就航路線データがありません</div>';
+    return;
+  }
+
+  rl.innerHTML = dests.map(d=>{
+    const dst = AIRPORTS[d];
+    const name = dst ? dst.name : d;
+    return `<div class="route-item" onclick="loadFlights('${iata}','${d}')">
+      <div>
+        <div class="dest">${d} <span style="font-weight:400;font-size:.78rem;color:#8b949e">${name}</span></div>
+      </div>
+      <div class="freq">時刻表を見る →</div>
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+//  Load Flights from ODPT
+// ============================================================
+async function loadFlights(from, to){
+  const date = document.getElementById('mapDate').value || new Date().toISOString().slice(0,10);
+  const cacheKey = `${from}-${to}-${date}`;
+
+  setLoading(true, `${from} → ${to} の時刻表を取得中...`);
+
+  let flights;
+  if(flightDataCache[cacheKey]){
+    flights = flightDataCache[cacheKey];
+  } else {
+    flights = await fetchOdptFlights(from, to, date);
+    flightDataCache[cacheKey] = flights;
+  }
+
+  setLoading(false);
+
+  // Show in route list area (replace route list with flight times, add back button)
+  const rl = document.getElementById('routeList');
+  const dst = AIRPORTS[to];
+  rl.innerHTML = `
+    <div style="padding:8px 0;margin-bottom:8px;border-bottom:1px solid #30363d;display:flex;align-items:center;gap:8px">
+      <button class="btn-secondary" onclick="onAirportClick('${from}')" style="padding:4px 10px;font-size:.75rem">← 戻る</button>
+      <span style="font-size:.82rem;font-weight:700">${from} → ${to} ${dst?dst.name:''}</span>
+    </div>
+    <div style="font-size:.72rem;color:#8b949e;margin-bottom:8px">${date} ／ JAL・JTA・RAC等</div>
+    ${flights.length===0
+      ? '<div class="no-results">この日の運航便が見つかりませんでした<br><small>ODPTにデータがない日付の可能性があります</small></div>'
+      : flights.map(f=>flightCard(f, true)).join('')}
+  `;
+}
+
+function flightCard(f, addable){
+  const dur = durationStr(f.depTime, f.arrTime);
+  return `<div class="result-card" onclick="${addable?`addToItinerary(${JSON.stringify(JSON.stringify(f))})`:''}">
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="badge jal">${f.operator||'JAL'}</span>
+      <span class="flight-num">${f.flightNumber}</span>
+      ${f.aircraft?`<span class="badge">${f.aircraft}</span>`:''}
+    </div>
+    <div class="flight-times">
+      <span class="time-big">${f.depTime}</span>
+      <span class="arrow">✈ ─────</span>
+      <span class="time-big">${f.arrTime}</span>
+    </div>
+    <div class="airports">${f.depAirport} 発 → ${f.arrAirport} 着</div>
+    <div class="flight-meta">
+      <span>所要時間 ${dur}</span>
+      ${f.via?`<span>経由: ${f.via}</span>`:''}
+      ${addable?'<span style="color:#c41e3a;margin-left:auto">+ 行程に追加</span>':''}
+    </div>
+  </div>`;
+}
+
+// ============================================================
+//  ODPT API fetch
+// ============================================================
+async function fetchOdptFlights(from, to, date){
+  try {
+    // ODPT flight timetable endpoint
+    // odpt:FlightInformationArrival / odpt:FlightInformationDeparture
+    // Or odpt:FlightSchedule
+    const params = {
+      'odpt:operator': 'odpt.Operator:JAL',
+    };
+    if(odptToken()) params['acl:consumerKey'] = odptToken();
+
+    // Try departure timetable
+    const depParams = new URLSearchParams({
+      'odpt:departureAirport': `odpt.Airport:${from}`,
+      'odpt:arrivalAirport': `odpt.Airport:${to}`,
+    });
+    if(odptToken()) depParams.set('acl:consumerKey', odptToken());
+
+    const url = `${ODPT_BASE}/objects?type=odpt:FlightSchedule&${depParams}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    if(data && data.length>0){
+      return parseOdptSchedule(data, from, to, date);
+    }
+  } catch(e){
+    console.warn('ODPT fetch failed, using mock data:', e.message);
+  }
+
+  // Fallback: generated mock data
+  return generateMockFlights(from, to, date);
+}
+
+function parseOdptSchedule(data, from, to, date){
+  const flights=[];
+  const dayOfWeek = getDayOfWeek(date);
+
+  data.forEach(item=>{
+    const timetable = item['odpt:flightScheduleObject'] || [];
+    const op = (item['odpt:operator']||'').replace('odpt.Operator:','');
+
+    timetable.forEach(entry=>{
+      const days = entry['odpt:isValidFrom'] ? [] : (entry['odpt:operationDay']||[]);
+      // Check if this entry runs on the given date
+      const validFrom = entry['odpt:isValidFrom'] ? new Date(entry['odpt:isValidFrom']) : null;
+      const validTo   = entry['odpt:isValidTo']   ? new Date(entry['odpt:isValidTo'])   : null;
+      const d = new Date(date);
+      if(validFrom && d < validFrom) return;
+      if(validTo   && d > validTo)   return;
+
+      const depTime = entry['odpt:departureTime']||'';
+      const arrTime = entry['odpt:arrivalTime']||'';
+      const flightNum = (entry['odpt:flightNumber']||[]).join('/');
+      const aircraft = entry['odpt:aircraftType']||'';
+      const via = (entry['odpt:viaAirport']||[]).map(v=>v.replace('odpt.Airport:','')).join(', ');
+
+      flights.push({
+        flightNumber: flightNum,
+        operator: op,
+        depAirport: from,
+        arrAirport: to,
+        depTime, arrTime, aircraft, via, date
+      });
+    });
+  });
+
+  flights.sort((a,b)=>a.depTime.localeCompare(b.depTime));
+  return flights;
+}
+
+function getDayOfWeek(dateStr){
+  return new Date(dateStr).getDay(); // 0=Sun
+}
+
+// Mock flight generator for when ODPT has no data
+function generateMockFlights(from, to, date){
+  const templates = {
+    'HND-OKA': [
+      {fn:'JL901', dep:'07:25',arr:'10:05',ac:'B767'},
+      {fn:'JL903', dep:'08:35',arr:'11:15',ac:'B767'},
+      {fn:'JL905', dep:'09:50',arr:'12:30',ac:'B737'},
+      {fn:'JL907', dep:'11:15',arr:'13:55',ac:'B767'},
+      {fn:'JL909', dep:'13:00',arr:'15:40',ac:'B737'},
+      {fn:'JL911', dep:'15:20',arr:'18:00',ac:'B767'},
+      {fn:'JL913', dep:'17:00',arr:'19:40',ac:'B737'},
+      {fn:'JL915', dep:'18:45',arr:'21:25',ac:'B767'},
+      {fn:'JL917', dep:'20:30',arr:'23:10',ac:'B737'},
+    ],
+    'HND-CTS': [
+      {fn:'JL501', dep:'06:45',arr:'08:20',ac:'B737'},
+      {fn:'JL503', dep:'08:00',arr:'09:35',ac:'B767'},
+      {fn:'JL505', dep:'09:30',arr:'11:05',ac:'B737'},
+      {fn:'JL507', dep:'11:00',arr:'12:35',ac:'B767'},
+      {fn:'JL509', dep:'13:15',arr:'14:50',ac:'B737'},
+      {fn:'JL511', dep:'15:30',arr:'17:05',ac:'B767'},
+      {fn:'JL513', dep:'18:00',arr:'19:35',ac:'B737'},
+      {fn:'JL515', dep:'20:00',arr:'21:35',ac:'B767'},
+    ],
+    'HND-FUK': [
+      {fn:'JL301', dep:'07:00',arr:'08:55',ac:'B767'},
+      {fn:'JL303', dep:'08:30',arr:'10:25',ac:'B737'},
+      {fn:'JL305', dep:'10:00',arr:'11:55',ac:'B767'},
+      {fn:'JL307', dep:'12:00',arr:'13:55',ac:'B737'},
+      {fn:'JL309', dep:'14:30',arr:'16:25',ac:'B767'},
+      {fn:'JL311', dep:'17:00',arr:'18:55',ac:'B737'},
+      {fn:'JL313', dep:'19:30',arr:'21:25',ac:'B767'},
+    ],
+    'OKA-ISG': [
+      {fn:'JL791', dep:'07:55',arr:'08:55',ac:'B737'},
+      {fn:'JL793', dep:'10:50',arr:'11:50',ac:'B737'},
+      {fn:'JL795', dep:'14:10',arr:'15:10',ac:'B737'},
+      {fn:'JL797', dep:'17:30',arr:'18:30',ac:'B737'},
+    ],
+    'OKA-MMY': [
+      {fn:'JL781', dep:'08:10',arr:'09:05',ac:'B737'},
+      {fn:'JL783', dep:'11:00',arr:'11:55',ac:'B737'},
+      {fn:'JL785', dep:'15:00',arr:'15:55',ac:'B737'},
+      {fn:'JL787', dep:'18:20',arr:'19:15',ac:'B737'},
+    ],
+  };
+
+  const key1 = `${from}-${to}`;
+  const key2 = `${to}-${from}`;
+  let tpl = templates[key1] || templates[key2];
+
+  if(!tpl){
+    // Generate generic based on distance
+    tpl = generateGenericFlights(from, to);
+  }
+
+  return tpl.map(t=>({
+    flightNumber: t.fn,
+    operator: 'JAL',
+    depAirport: from,
+    arrAirport: to,
+    depTime: (templates[key2] && !templates[key1]) ? adjustTime(t.dep,30) : t.dep,
+    arrTime: (templates[key2] && !templates[key1]) ? adjustTime(t.arr,30) : t.arr,
+    aircraft: t.ac,
+    via: '',
+    date
+  }));
+}
+
+function generateGenericFlights(from, to){
+  const src = AIRPORTS[from], dst = AIRPORTS[to];
+  if(!src||!dst) return [];
+  const dist = Math.sqrt(Math.pow(src.lat-dst.lat,2)+Math.pow(src.lng-dst.lng,2));
+  const flightMins = Math.round(30 + dist * 6);
+  const starts = ['07:30','09:00','11:00','13:30','16:00','18:30','20:00'];
+  const ops = ['JL','JL','JL','NU','NU']; // JAL/JTA
+  return starts.map((dep,i)=>{
+    const arr = addMinutes(dep, flightMins);
+    const num = 100 + i*2 + Math.abs(from.charCodeAt(0)-64)*3;
+    const op = ops[i%ops.length];
+    return {fn:`${op}${num}`, dep, arr:'', ac:'B737'};
+  }).map(t=>({...t, arr: addMinutes(t.dep, flightMins)}));
+}
+
+function addMinutes(timeStr, mins){
+  const [h,m] = timeStr.split(':').map(Number);
+  const total = h*60+m+mins;
+  return `${String(Math.floor(total/60)%24).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+}
+function adjustTime(timeStr, offsetMins){
+  return addMinutes(timeStr, offsetMins);
+}
+function durationStr(dep, arr){
+  if(!dep||!arr) return '--';
+  const [dh,dm]=dep.split(':').map(Number);
+  const [ah,am]=arr.split(':').map(Number);
+  let mins=(ah*60+am)-(dh*60+dm);
+  if(mins<0) mins+=24*60;
+  return `${Math.floor(mins/60)}時間${mins%60}分`;
+}
+
+// ============================================================
+//  Itinerary
+// ============================================================
+function addToItinerary(jsonStr){
+  const f = JSON.parse(jsonStr);
+  itinerary.push(f);
+  renderItinerary();
+}
+function removeFromItinerary(idx){
+  itinerary.splice(idx,1);
+  renderItinerary();
+}
+function clearItinerary(){
+  itinerary=[];
+  renderItinerary();
+}
+
+function renderItinerary(){
+  ['itinList','itinList2'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    if(itinerary.length===0){
+      el.innerHTML='<div class="no-results" style="padding:12px">フライトをクリックして追加</div>';
+    } else {
+      el.innerHTML=itinerary.map((f,i)=>`
+        <div class="itin-leg">
+          <span class="fn">${f.flightNumber}</span>
+          <span class="detail">${f.depAirport} ${f.depTime} → ${f.arrAirport} ${f.arrTime}<br>
+            <span style="font-size:.7rem;color:#8b949e">${f.date}</span></span>
+          <button class="del" onclick="removeFromItinerary(${i})">✕</button>
+        </div>`).join('');
+    }
+  });
+
+  // Total time
+  if(itinerary.length>=2){
+    const first=itinerary[0], last=itinerary[itinerary.length-1];
+    const dur=durationStr(first.depTime, last.arrTime);
+    ['totalTime','totalTime2'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(!el) return;
+      el.style.display='block';
+      el.textContent=`総所要時間（目安）: ${dur}　／　${itinerary.length}区間`;
+    });
+  } else {
+    ['totalTime','totalTime2'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el) el.style.display='none';
+    });
+  }
+}
+
+// ============================================================
+//  Search mode
+// ============================================================
+function initSearchLegs(){
+  renderLegForms();
+}
+
+function addLeg(){
+  const last = searchLegs[searchLegs.length-1];
+  searchLegs.push({from: last.to||'', to:''});
+  renderLegForms();
+}
+
+function removeLeg(i){
+  if(searchLegs.length<=1) return;
+  searchLegs.splice(i,1);
+  renderLegForms();
+}
+
+function renderLegForms(){
+  const container = document.getElementById('legForms');
+  const airportOptions = Object.entries(AIRPORTS).sort((a,b)=>a[1].name.localeCompare(b[1].name,'ja'))
+    .map(([iata,ap])=>`<option value="${iata}">${iata} - ${ap.name}</option>`).join('');
+
+  container.innerHTML = searchLegs.map((leg,i)=>`
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div class="leg-header">
+        <span class="leg-label">区間 ${i+1}</span>
+        ${searchLegs.length>1?`<button class="btn-secondary" onclick="removeLeg(${i})" style="font-size:.7rem;padding:2px 8px">削除</button>`:''}
+      </div>
+      <div class="row">
+        <label>出発</label>
+        <select id="legFrom${i}" onchange="searchLegs[${i}].from=this.value">${airportOptions}</select>
+      </div>
+      <div class="row">
+        <label>到着</label>
+        <select id="legTo${i}" onchange="searchLegs[${i}].to=this.value">${airportOptions}</select>
+      </div>
+    </div>
+  `).join('');
+
+  // Set values
+  searchLegs.forEach((leg,i)=>{
+    const fromEl=document.getElementById(`legFrom${i}`);
+    const toEl=document.getElementById(`legTo${i}`);
+    if(fromEl && leg.from) fromEl.value=leg.from;
+    if(toEl && leg.to) toEl.value=leg.to;
+  });
+}
+
+async function runSearch(){
+  const date = document.getElementById('searchDate').value;
+  const resultsEl = document.getElementById('searchResults');
+  resultsEl.innerHTML='<div class="no-results"><div class="spinner" style="margin:0 auto 8px"></div>検索中...</div>';
+
+  let allFlights=[];
+  for(const leg of searchLegs){
+    if(!leg.from||!leg.to||leg.from===leg.to) continue;
+    setLoading(true, `${leg.from}→${leg.to} 検索中...`);
+    const flights = await fetchOdptFlights(leg.from, leg.to, date);
+    allFlights.push({leg, flights});
+  }
+  setLoading(false);
+
+  if(allFlights.length===0){
+    resultsEl.innerHTML='<div class="no-results">出発地・到着地を選択してください</div>';
+    return;
+  }
+
+  resultsEl.innerHTML = allFlights.map(({leg, flights})=>`
+    <div style="margin-bottom:16px">
+      <div style="font-size:.8rem;font-weight:700;color:#c41e3a;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid #30363d">
+        ✈ 区間: ${leg.from} → ${leg.to}　${date}
+      </div>
+      ${flights.length===0
+        ? '<div class="no-results">便が見つかりませんでした</div>'
+        : flights.map(f=>flightCard(f,true)).join('')}
+    </div>
+  `).join('');
+}
+
+// ============================================================
+//  ODPT Airport data loader
+// ============================================================
+async function tryLoadOdptAirports(){
+  if(!odptToken()){
+    setStatus('ODPTトークン未設定。?token=XXX をURLに付加するとリアルデータを取得できます。モックデータを使用中。');
+    return;
+  }
+  try{
+    setStatus('ODPT APIから空港データを取得中...');
+    const data = await odptFetch('/objects',{'type':'odpt:Airport'});
+    if(data && data.length>0){
+      data.forEach(item=>{
+        const id = (item['owl:sameAs']||'').replace('odpt.Airport:','');
+        if(!id || AIRPORTS[id]) return;
+        const geo = item['geo:long'] ? {lng:item['geo:long'], lat:item['geo:lat']} : null;
+        if(!geo) return;
+        const name = (item['odpt:airportTitle']||{})['ja'] || id;
+        AIRPORTS[id]={name, nameEn:(item['odpt:airportTitle']||{})['en']||id, lat:geo.lat, lng:geo.lng, hub:false};
+        addAirportMarker(id, AIRPORTS[id]);
+      });
+      setStatus(`ODPT: ${data.length}空港を読み込みました`);
+    }
+    // Load JAL routes from ODPT
+    await loadOdptRoutes();
+  } catch(e){
+    setStatus('ODPT接続エラー: ' + e.message + ' — モックデータを使用');
+  }
+}
+
+async function loadOdptRoutes(){
+  try{
+    const data = await odptFetch('/objects',{
+      'type':'odpt:FlightSchedule',
+      'odpt:operator':'odpt.Operator:JAL'
+    });
+    if(!data||data.length===0) return;
+    data.forEach(item=>{
+      const dep = (item['odpt:departureAirport']||'').replace('odpt.Airport:','');
+      const arr = (item['odpt:arrivalAirport']||'').replace('odpt.Airport:','');
+      if(!dep||!arr) return;
+      if(!routeMap[dep]) routeMap[dep]=new Set();
+      if(!routeMap[arr]) routeMap[arr]=new Set();
+      routeMap[dep].add(arr);
+      routeMap[arr].add(dep);
+    });
+    setStatus(`ODPT: JAL路線データを読み込みました (${data.length}件)`);
+  } catch(e){
+    console.warn('Route load failed:', e);
+  }
+}
+
+// ============================================================
+//  UI helpers
+// ============================================================
+function setMode(m){
+  mode=m;
+  document.getElementById('panelMap').classList.toggle('active', m==='map');
+  document.getElementById('panelSearch').classList.toggle('active', m==='search');
+  document.getElementById('btnMapMode').classList.toggle('active', m==='map');
+  document.getElementById('btnSearchMode').classList.toggle('active', m==='search');
+}
+
+function setLoading(show, text=''){
+  const el=document.getElementById('loading');
+  el.classList.toggle('show', show);
+  if(text) document.getElementById('loadingText').textContent=text;
+}
+
+function setStatus(msg, isError=false){
+  const el=document.getElementById('statusBar');
+  el.textContent=msg;
+  el.className='status-bar'+(isError?' err':'');
+}
+</script>
+</body>
+</html>
