@@ -495,44 +495,50 @@ async function fetchOdptFlights(from, to, date){
 }
 
 function parseOdptSchedule(data, from, to, date){
-  const flights=[];
-  const dayOfWeek = getDayOfWeek(date);
+  const seen = new Map(); // flightNumber → flight object（重複排除用）
+  const d = new Date(date);
+  const dow = d.getDay(); // 0=日,1=月,...,6=土
+
+  // odpt:calendar → 適用曜日のマッピング
+  const calendarDays = {
+    'odpt.Calendar:Everyday':    [0,1,2,3,4,5,6],
+    'odpt.Calendar:Weekday':     [1,2,3,4,5],
+    'odpt.Calendar:Saturday':    [6],
+    'odpt.Calendar:Sunday':      [0],
+    'odpt.Calendar:Holiday':     [0],
+    'odpt.Calendar:SaturdayHoliday': [0,6],
+    'odpt.Calendar:SundayHoliday':   [0],
+  };
 
   data.forEach(item=>{
-    const timetable = item['odpt:flightScheduleObject'] || [];
     const op = (item['odpt:operator']||'').replace('odpt.Operator:','');
+    const cal = item['odpt:calendar']||'';
+    const allowedDays = calendarDays[cal];
+    // カレンダーが既知かつ今日の曜日が含まれない場合はスキップ
+    if(allowedDays && !allowedDays.includes(dow)) return;
 
+    const timetable = item['odpt:flightScheduleObject'] || [];
     timetable.forEach(entry=>{
-      const days = entry['odpt:isValidFrom'] ? [] : (entry['odpt:operationDay']||[]);
-      // Check if this entry runs on the given date
+      // 有効期間チェック
       const validFrom = entry['odpt:isValidFrom'] ? new Date(entry['odpt:isValidFrom']) : null;
       const validTo   = entry['odpt:isValidTo']   ? new Date(entry['odpt:isValidTo'])   : null;
-      const d = new Date(date);
       if(validFrom && d < validFrom) return;
       if(validTo   && d > validTo)   return;
 
-      const depTime = entry['odpt:originTime']||'';
-      const arrTime = entry['odpt:destinationTime']||'';
+      const depTime   = entry['odpt:originTime']||'';
+      const arrTime   = entry['odpt:destinationTime']||'';
       const flightNum = (entry['odpt:flightNumber']||[]).join('/');
-      const aircraft = entry['odpt:aircraftType']||'';
-      const via = (entry['odpt:viaAirport']||[]).map(v=>v.replace('odpt.Airport:','')).join(', ');
+      const aircraft  = entry['odpt:aircraftType']||'';
+      const via       = (entry['odpt:viaAirport']||[]).map(v=>v.replace('odpt.Airport:','')).join(', ');
 
-      flights.push({
-        flightNumber: flightNum,
-        operator: op,
-        depAirport: from,
-        arrAirport: to,
-        depTime, arrTime, aircraft, via, date
-      });
+      // 便名が同じなら最初の1件だけ使う（カレンダー違いの重複排除）
+      if(flightNum && !seen.has(flightNum)){
+        seen.set(flightNum, {flightNumber:flightNum, operator:op, depAirport:from, arrAirport:to, depTime, arrTime, aircraft, via, date});
+      }
     });
   });
 
-  flights.sort((a,b)=>a.depTime.localeCompare(b.depTime));
-  return flights;
-}
-
-function getDayOfWeek(dateStr){
-  return new Date(dateStr).getDay(); // 0=Sun
+  return [...seen.values()].sort((a,b)=>a.depTime.localeCompare(b.depTime));
 }
 
 // Mock flight generator for when ODPT has no data
