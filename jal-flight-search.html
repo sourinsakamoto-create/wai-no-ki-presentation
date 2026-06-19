@@ -466,26 +466,31 @@ function flightCard(f, addable){
 async function fetchOdptFlights(from, to, date){
   try {
     const tok = odptToken();
-    const depParams = new URLSearchParams({
-      'odpt:departureAirport': `odpt.Airport:${from}`,
-      'odpt:arrivalAirport': `odpt.Airport:${to}`,
+    const params = new URLSearchParams({
+      'odpt:originAirport': `odpt.Airport:${from}`,
+      'odpt:destinationAirport': `odpt.Airport:${to}`,
+      'odpt:operator': 'odpt.Operator:JAL',
     });
-    if(tok) depParams.set('acl:consumerKey', tok);
+    if(tok) params.set('acl:consumerKey', tok);
 
-    depParams.set('odpt:operator', 'odpt.Operator:JAL');
-    const url = `${ODPT_BASE}/odpt:FlightSchedule?${depParams}`;
+    const url = `${ODPT_BASE}/odpt:FlightSchedule?${params}`;
     const res = await fetch(url);
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    console.log('[ODPT] FlightSchedule raw:', JSON.stringify(data).slice(0,500));
 
-    if(data && data.length>0){
-      return parseOdptSchedule(data, from, to, date);
+    if(data && data.length > 0){
+      const parsed = parseOdptSchedule(data, from, to, date);
+      if(parsed.length > 0) return parsed;
+      // ODPTデータはあるが日付フィルタで0件 → "便なし"を返す
+      return [];
     }
   } catch(e){
-    console.warn('ODPT fetch failed, using mock data:', e.message);
+    console.warn('[ODPT] fetch failed:', e.message);
+    setStatus('ODPT取得エラー: ' + e.message, true);
   }
 
-  // Fallback: generated mock data
+  // ODPTにデータなし → モックにフォールバック
   return generateMockFlights(from, to, date);
 }
 
@@ -506,8 +511,8 @@ function parseOdptSchedule(data, from, to, date){
       if(validFrom && d < validFrom) return;
       if(validTo   && d > validTo)   return;
 
-      const depTime = entry['odpt:departureTime']||'';
-      const arrTime = entry['odpt:arrivalTime']||'';
+      const depTime = entry['odpt:originTime']||'';
+      const arrTime = entry['odpt:destinationTime']||'';
       const flightNum = (entry['odpt:flightNumber']||[]).join('/');
       const aircraft = entry['odpt:aircraftType']||'';
       const via = (entry['odpt:viaAirport']||[]).map(v=>v.replace('odpt.Airport:','')).join(', ');
@@ -801,8 +806,8 @@ async function loadOdptRoutes(){
     });
     if(!data||data.length===0) return;
     data.forEach(item=>{
-      const dep = (item['odpt:departureAirport']||'').replace('odpt.Airport:','');
-      const arr = (item['odpt:arrivalAirport']||'').replace('odpt.Airport:','');
+      const dep = (item['odpt:originAirport']||'').replace('odpt.Airport:','');
+      const arr = (item['odpt:destinationAirport']||'').replace('odpt.Airport:','');
       if(!dep||!arr) return;
       if(!routeMap[dep]) routeMap[dep]=new Set();
       if(!routeMap[arr]) routeMap[arr]=new Set();
