@@ -197,7 +197,7 @@ select:focus,input:focus{outline:none;border-color:#c41e3a}
 // ============================================================
 //  ODPT API
 // ============================================================
-const ODPT_BASE = 'https://api.odpt.org/api/4';
+const ODPT_BASE = 'https://api.odpt.org/api/v4';
 // Public token (no-auth endpoint for flight data)
 // ODPT Flight data is available via the public endpoint
 const ODPT_TOKEN = '';  // Set via URL param ?token=XXX or leave blank for public
@@ -465,22 +465,15 @@ function flightCard(f, addable){
 // ============================================================
 async function fetchOdptFlights(from, to, date){
   try {
-    // ODPT flight timetable endpoint
-    // odpt:FlightInformationArrival / odpt:FlightInformationDeparture
-    // Or odpt:FlightSchedule
-    const params = {
-      'odpt:operator': 'odpt.Operator:JAL',
-    };
-    if(odptToken()) params['acl:consumerKey'] = odptToken();
-
-    // Try departure timetable
+    const tok = odptToken();
     const depParams = new URLSearchParams({
       'odpt:departureAirport': `odpt.Airport:${from}`,
       'odpt:arrivalAirport': `odpt.Airport:${to}`,
     });
-    if(odptToken()) depParams.set('acl:consumerKey', odptToken());
+    if(tok) depParams.set('acl:consumerKey', tok);
 
-    const url = `${ODPT_BASE}/objects?type=odpt:FlightSchedule&${depParams}`;
+    depParams.set('odpt:operator', 'odpt.Operator:JAL');
+    const url = `${ODPT_BASE}/odpt:FlightSchedule?${depParams}`;
     const res = await fetch(url);
     if(!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -781,7 +774,7 @@ async function tryLoadOdptAirports(){
   }
   try{
     setStatus('ODPT APIから空港データを取得中...');
-    const data = await odptFetch('/objects',{'type':'odpt:Airport'});
+    const data = await odptFetch('/odpt:Airport',{});
     if(data && data.length>0){
       data.forEach(item=>{
         const id = (item['owl:sameAs']||'').replace('odpt.Airport:','');
@@ -803,8 +796,7 @@ async function tryLoadOdptAirports(){
 
 async function loadOdptRoutes(){
   try{
-    const data = await odptFetch('/objects',{
-      'type':'odpt:FlightSchedule',
+    const data = await odptFetch('/odpt:FlightSchedule',{
       'odpt:operator':'odpt.Operator:JAL'
     });
     if(!data||data.length===0) return;
